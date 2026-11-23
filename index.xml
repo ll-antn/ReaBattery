@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<index version="1" name="ReaBattery">
+  <metadata>
+    <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0\fswiss Helvetica;}}
+\f0\fs28\b ReaBattery\b0\fs22\par
+Battery indicator for the REAPER Transport Bar. Currently only for Apple Silicon macOS.\par
+}]]></description>
+    <link rel="website" href="https://github.com/ll-antn/ReaBatteryReapack">Repository and installation instructions</link>
+  </metadata>
+  <category name="Extensions">
+    <reapack name="ReaBattery" type="extension" desc="ReaBattery">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0\fswiss Helvetica;}}
+\f0\fs28\b ReaBattery\b0\fs22\par
+Shows battery level in the docked Transport Bar. Configure percentage, position, fullscreen visibility and visibility on external power from Extensions > ReaBattery.\par
+}]]></description>
+        <link rel="website" href="https://github.com/ll-antn/ReaBatteryReapack">Documentation</link>
+      </metadata>
+      <version name="0.1" author="ll-antn">
+        <changelog><![CDATA[Initial ReaPack distribution for Apple Silicon macOS and Windows x64.]]></changelog>
+        <source platform="darwin-arm64" file="reaper_reabattery.dylib">https://github.com/ll-antn/ReaBattery/releases/download/v0.1/reaper_reabattery.dylib</source>
+      </version>
+    </reapack>
+  </category>
+</index>
