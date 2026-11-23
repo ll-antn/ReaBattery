@@ -19,11 +19,20 @@ constexpr CGFloat indicatorHeight = 20;
 constexpr char settingsSection[] = "ReaBattery";
 constexpr char showPercentageKey[] = "ShowPercentage";
 constexpr char fullscreenOnlyKey[] = "FullscreenOnly";
+constexpr char showWhenPluggedInKey[] = "ShowWhenPluggedIn";
+constexpr char positionKey[] = "Position";
+constexpr int transportStatusControlId = 1010;
 using Clock = std::chrono::steady_clock;
+
+enum class IndicatorPosition { Right, Left, Center };
+constexpr const char* positionValues[] = {"right", "left", "center"};
 
 bool showPercentage = true;
 bool fullscreenOnly = false;
+bool showWhenPluggedIn = true;
+IndicatorPosition indicatorPosition = IndicatorPosition::Right;
 void (*setExtState)(const char*, const char*, const char*, bool);
+void detachIndicator();
 void updateTransport();
 
 struct Battery {
@@ -117,7 +126,7 @@ NSColor* batteryColor(Battery battery)
 
 @interface ReaBatteryIndicator : NSView
 - (void)showBattery:(Battery)battery;
-- (void)refreshBackgroundFromTransport:(NSView*)view fallbackColor:(int)color;
+- (void)refreshBackgroundFromTransport:(NSView*)view leftEdge:(BOOL)leftEdge fallbackColor:(int)color;
 @end
 
 @implementation ReaBatteryIndicator {
@@ -153,7 +162,39 @@ NSColor* batteryColor(Battery battery)
                                          keyEquivalent:@""];
     fullscreenItem.target = self;
     fullscreenItem.state = fullscreenOnly ? NSControlStateValueOn : NSControlStateValueOff;
+    NSMenuItem* pluggedInItem = [menu addItemWithTitle:@"Show when plugged-in"
+                                              action:@selector(toggleShowWhenPluggedIn:)
+                                       keyEquivalent:@""];
+    pluggedInItem.target = self;
+    pluggedInItem.state = showWhenPluggedIn ? NSControlStateValueOn : NSControlStateValueOff;
+    NSMenuItem* positionItem = [menu addItemWithTitle:@"Position" action:nil keyEquivalent:@""];
+    NSMenu* positions = [[NSMenu alloc] initWithTitle:@"Position"];
+    NSArray<NSString*>* names = @[@"Right Corner", @"Left Corner", @"Center"];
+    for (NSUInteger i = 0; i < names.count; ++i) {
+        NSMenuItem* choice = [positions addItemWithTitle:names[i]
+                                                 action:@selector(changeIndicatorPosition:)
+                                          keyEquivalent:@""];
+        choice.target = self;
+        choice.tag = i;
+        choice.state = i == static_cast<NSUInteger>(indicatorPosition)
+            ? NSControlStateValueOn : NSControlStateValueOff;
+    }
+    positionItem.submenu = positions;
     return menu;
+}
+
+- (void)changeIndicatorPosition:(NSMenuItem*)sender
+{
+    const NSInteger index = sender.tag;
+    if (index < 0 || index > static_cast<NSInteger>(IndicatorPosition::Center))
+        return;
+    const auto position = static_cast<IndicatorPosition>(index);
+    if (position == indicatorPosition)
+        return;
+    indicatorPosition = position;
+    setExtState(settingsSection, positionKey, positionValues[index], true);
+    detachIndicator();
+    updateTransport();
 }
 
 - (void)togglePercentage:(NSMenuItem*)sender
@@ -173,6 +214,14 @@ NSColor* batteryColor(Battery battery)
     updateTransport();
 }
 
+- (void)toggleShowWhenPluggedIn:(NSMenuItem*)sender
+{
+    showWhenPluggedIn = !showWhenPluggedIn;
+    sender.state = showWhenPluggedIn ? NSControlStateValueOn : NSControlStateValueOff;
+    setExtState(settingsSection, showWhenPluggedInKey, showWhenPluggedIn ? "1" : "0", true);
+    updateTransport();
+}
+
 - (void)showBattery:(Battery)battery
 {
     if (_battery.percent == battery.percent && _battery.pluggedIn == battery.pluggedIn)
@@ -188,17 +237,20 @@ NSColor* batteryColor(Battery battery)
     self.needsDisplay = YES;
 }
 
-- (void)refreshBackgroundFromTransport:(NSView*)view fallbackColor:(int)color
+- (void)refreshBackgroundFromTransport:(NSView*)view leftEdge:(BOOL)leftEdge fallbackColor:(int)color
 {
     // Extend the painted edge so WALTER fills and vertical gradients continue
     // across the space reserved for the indicator.
-    const NSRect bounds = view.bounds;
-    const CGFloat pixel = [view convertSizeFromBacking:NSMakeSize(1, 1)].width;
-    const NSRect edge = NSMakeRect(NSMaxX(bounds) - 1 - pixel, NSMinY(bounds),
-                                  pixel, NSHeight(bounds));
-    _transportEdge = [view bitmapImageRepForCachingDisplayInRect:edge];
-    if (_transportEdge)
-        [view cacheDisplayInRect:edge toBitmapImageRep:_transportEdge];
+    _transportEdge = nil;
+    if (view) {
+        const NSRect bounds = view.bounds;
+        const CGFloat pixel = [view convertSizeFromBacking:NSMakeSize(1, 1)].width;
+        const CGFloat x = leftEdge ? NSMinX(bounds) + 1 : NSMaxX(bounds) - 1 - pixel;
+        const NSRect edge = NSMakeRect(x, NSMinY(bounds), pixel, NSHeight(bounds));
+        _transportEdge = [view bitmapImageRepForCachingDisplayInRect:edge];
+        if (_transportEdge)
+            [view cacheDisplayInRect:edge toBitmapImageRep:_transportEdge];
+    }
     _fallbackColor = color;
     self.needsDisplay = YES;
 }
@@ -219,8 +271,9 @@ NSColor* batteryColor(Battery battery)
     const NSRect badge = [self badgeRect];
     const CGFloat y = NSMinY(badge);
 
+    const bool drawPercentage = showPercentage && NSWidth(self.bounds) >= indicatorWidthWithPercentage;
     CGContextRef context = NSGraphicsContext.currentContext.CGContext;
-    if (!showPercentage) {
+    if (!drawPercentage) {
         const CGFloat centerX = NSMidX(badge);
         const CGFloat centerY = NSMidY(badge);
         CGContextSaveGState(context);
@@ -239,7 +292,7 @@ NSColor* batteryColor(Battery battery)
     const CGFloat fillWidth = 12 * _battery.percent / 100.0;
     NSRectFill(NSMakeRect(10, y + 7, fillWidth, 6));
 
-    if (!showPercentage) {
+    if (!drawPercentage) {
         CGContextRestoreGState(context);
         return;
     }
@@ -264,8 +317,47 @@ int (*getToggleCommandState)(int);
 
 ReaBatteryIndicator* indicator;
 __weak NSView* transport;
-NSRect reservedFrame;
-CGFloat reservedWidth;
+NSRect previousVisibleBar;
+
+struct FrameReservation {
+    __weak NSView* view;
+    __weak NSView* parent;
+    NSRect original;
+    NSRect adjusted;
+
+    bool isAppliedTo(NSView* candidate) const
+    {
+        return parent && candidate && candidate == view && candidate.superview == parent &&
+               NSEqualRects(candidate.frame, adjusted);
+    }
+
+    NSRect originalFrame(NSView* candidate) const
+    {
+        return isAppliedTo(candidate) ? original : candidate.frame;
+    }
+
+    void restore()
+    {
+        NSView* previous = view;
+        if (isAppliedTo(previous))
+            previous.frame = original;
+        view = nil;
+        parent = nil;
+    }
+
+    bool apply(NSView* target, NSRect fullFrame, NSRect newFrame)
+    {
+        view = target;
+        parent = target.superview;
+        original = fullFrame;
+        adjusted = newFrame;
+        if (NSEqualRects(target.frame, newFrame))
+            return false;
+        target.frame = newFrame;
+        return true;
+    }
+} reservation;
+
 Clock::time_point nextLayout{};
 Clock::time_point nextBatteryRead{};
 Clock::time_point nextBackgroundRead{};
@@ -274,7 +366,6 @@ Battery battery;
 NSView* findDockedTransport(NSView* mainView)
 {
     // The main-window Transport dialog has no title when docked at startup.
-    constexpr int transportStatusControlId = 1010;
     for (NSView* view in mainView.subviews) {
         if (view.hidden || view.frame.size.height < indicatorHeight)
             continue;
@@ -289,16 +380,10 @@ NSView* findDockedTransport(NSView* mainView)
 
 void detachIndicator()
 {
-    NSView* oldTransport = transport;
-    // The host may have already supplied a new frame during a docking change.
-    if (oldTransport && oldTransport.superview == indicator.superview &&
-        NSEqualRects(oldTransport.frame, reservedFrame)) {
-        NSRect fullFrame = reservedFrame;
-        fullFrame.size.width += reservedWidth;
-        oldTransport.frame = fullFrame;
-    }
+    reservation.restore();
     [indicator removeFromSuperview];
     transport = nil;
+    previousVisibleBar = NSZeroRect;
     nextBackgroundRead = {};
 }
 
@@ -309,12 +394,31 @@ bool isFullscreen(NSWindow* window)
            (getToggleCommandState && getToggleCommandState(toggleReaperFullscreenAction) == 1);
 }
 
+NSView* findCenterAnchor(NSView* bar, NSView* mainView, CGFloat width)
+{
+    // When Center falls back to a corner, wait for REAPER to lay out a fresh
+    // Transport frame before retrying the time display.
+    if (indicatorPosition != IndicatorPosition::Center || reservation.isAppliedTo(bar))
+        return nil;
+    id status = (__bridge id)GetDlgItem((__bridge HWND)bar, transportStatusControlId);
+    if (![status isKindOfClass:[NSView class]])
+        return nil;
+    NSView* display = status;
+    const NSRect displayFrame = reservation.originalFrame(display);
+    const NSRect visible = NSIntersectionRect(bar.bounds, [bar convertRect:mainView.bounds fromView:mainView]);
+    if (display.superview != bar || display.hidden || NSHeight(displayFrame) < indicatorHeight ||
+        NSWidth(displayFrame) < 200 + width || !NSContainsRect(visible, displayFrame))
+        return nil;
+    return display;
+}
+
 void updateTransport()
 {
     id mainWindow = (__bridge id)getMainWindow();
     NSView* mainView = [mainWindow isKindOfClass:[NSWindow class]]
         ? ((NSWindow*)mainWindow).contentView : mainWindow;
     NSView* current = battery.percent >= 0 && [mainView isKindOfClass:[NSView class]] &&
+        (showWhenPluggedIn || !battery.pluggedIn) &&
         (!fullscreenOnly || isFullscreen(mainView.window))
         ? findDockedTransport(mainView) : nil;
     if (!current) {
@@ -324,34 +428,61 @@ void updateTransport()
     if (current != transport)
         detachIndicator();
 
-    NSRect frame = current.frame;
-    if (current == transport && NSEqualRects(frame, reservedFrame))
-        frame.size.width += reservedWidth;
-    if (frame.size.width < 200 + indicatorWidthWithPercentage) {
+    const NSRect barFrame = reservation.originalFrame(current);
+    const NSRect visible = NSIntersectionRect(barFrame, mainView.bounds);
+    if (NSWidth(visible) <= indicatorWidthWithoutPercentage || NSHeight(visible) < indicatorHeight) {
         detachIndicator();
         return;
     }
 
-    // Reserve space while letting WALTER lay out the remaining transport controls.
-    const CGFloat width = showPercentage ? indicatorWidthWithPercentage : indicatorWidthWithoutPercentage;
-    frame.size.width -= width;
-    const bool layoutChanged = !NSEqualRects(current.frame, frame);
-    if (layoutChanged)
-        current.frame = frame;
-    reservedFrame = frame;
-    reservedWidth = width;
+    const CGFloat width = showPercentage && NSWidth(visible) > indicatorWidthWithPercentage
+        ? indicatorWidthWithPercentage : indicatorWidthWithoutPercentage;
+    if (indicatorPosition == IndicatorPosition::Center && !NSEqualRects(visible, previousVisibleBar) &&
+        reservation.isAppliedTo(current))
+        reservation.restore();
+    previousVisibleBar = visible;
+
+    NSView* centerAnchor = findCenterAnchor(current, mainView, width);
+    NSView* anchor = centerAnchor ?: current;
+    NSView* parent = centerAnchor ? current : mainView;
+    if (reservation.view && reservation.view != anchor)
+        reservation.restore();
+
+    const bool leftEdge = indicatorPosition == IndicatorPosition::Left;
+    const NSRect original = centerAnchor ? reservation.originalFrame(centerAnchor) : barFrame;
+    const NSRect area = centerAnchor ? original : visible;
+    const CGFloat x = leftEdge ? NSMinX(area) : NSMaxX(area) - width;
+    const NSRect position = NSMakeRect(x, NSMinY(area), width, NSHeight(area));
+
+    // Reserve the slot from the time display in Center mode or from the
+    // Transport itself at a corner, allowing REAPER to reflow the controls.
+    NSRect remaining = original;
+    if (leftEdge) {
+        remaining.origin.x = NSMaxX(position);
+        remaining.size.width = NSMaxX(original) - NSMinX(remaining);
+    } else {
+        remaining.size.width = NSMinX(position) - NSMinX(original);
+    }
+    const bool layoutChanged = reservation.apply(anchor, original, remaining);
     transport = current;
 
     [indicator showBattery:battery];
-    const NSRect position = NSMakeRect(NSMaxX(frame), NSMinY(frame), width, NSHeight(frame));
+    const bool parentChanged = indicator.superview != parent;
+    if (parentChanged)
+        [indicator removeFromSuperview];
     if (!NSEqualRects(indicator.frame, position))
         indicator.frame = position;
-    if (!indicator.superview)
-        [mainView addSubview:indicator positioned:NSWindowAbove relativeTo:current];
+    if (parentChanged)
+        [parent addSubview:indicator positioned:NSWindowAbove relativeTo:anchor];
 
     const auto now = Clock::now();
-    if (layoutChanged || now >= nextBackgroundRead) {
-        [indicator refreshBackgroundFromTransport:current fallbackColor:getThemeColor("col_trans_bg", 0)];
+    if (centerAnchor) {
+        if (parentChanged)
+            [indicator refreshBackgroundFromTransport:nil leftEdge:NO fallbackColor:-1];
+    } else if (parentChanged || layoutChanged || now >= nextBackgroundRead) {
+        [indicator refreshBackgroundFromTransport:current
+                                         leftEdge:leftEdge
+                                    fallbackColor:getThemeColor("col_trans_bg", 0)];
         nextBackgroundRead = now + std::chrono::seconds(1);
     }
 }
@@ -404,6 +535,14 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(
     showPercentage = !savedPercentage || std::strcmp(savedPercentage, "0") != 0;
     const char* savedFullscreenOnly = getExtState(settingsSection, fullscreenOnlyKey);
     fullscreenOnly = savedFullscreenOnly && std::strcmp(savedFullscreenOnly, "1") == 0;
+    const char* savedShowWhenPluggedIn = getExtState(settingsSection, showWhenPluggedInKey);
+    showWhenPluggedIn = !savedShowWhenPluggedIn || std::strcmp(savedShowWhenPluggedIn, "0") != 0;
+    const char* savedPosition = getExtState(settingsSection, positionKey);
+    indicatorPosition = IndicatorPosition::Right;
+    if (savedPosition && std::strcmp(savedPosition, "left") == 0)
+        indicatorPosition = IndicatorPosition::Left;
+    if (savedPosition && std::strcmp(savedPosition, "center") == 0)
+        indicatorPosition = IndicatorPosition::Center;
     indicator = [[ReaBatteryIndicator alloc] initWithFrame:NSZeroRect];
     if (!host->Register("timer", reinterpret_cast<void*>(tick))) {
         indicator = nil;

@@ -13,6 +13,10 @@ The indicator appears with the main-window Transport Bar when there is room for 
 
 Right-click the battery icon and uncheck **Show Percentage** to display just the icon. Check **Show Only in Fullscreen** to hide the indicator whenever the main REAPER window leaves fullscreen. To turn the setting off, enter fullscreen and uncheck it from the same menu. REAPER remembers both settings after a restart.
 
+**Show when plugged-in** is on by default. Uncheck it to show the indicator only when your Mac is running on battery. To turn it back on, disconnect external power and check it in the same menu. REAPER remembers this setting.
+
+Use **Position** in the battery menu to choose **Right Corner** (the default), **Left Corner**, or **Center**. Center places the indicator next to the time display and falls back to the right corner when the display is hidden or too narrow. REAPER remembers your choice.
+
 ## Build and install
 
 Run these commands from the project directory on an Apple Silicon Mac with CMake and Xcode Command Line Tools.
