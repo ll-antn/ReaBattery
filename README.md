@@ -11,11 +11,13 @@ ReaBattery shows your MacBook’s battery percentage at the right edge of REAPER
 
 The indicator appears with the main-window Transport Bar when there is room for it. To put it at the bottom edge, right-click the Transport Bar and choose **Dock transport in main window**, then **Docked transport position → Bottom of main window**.
 
-Right-click the battery icon and uncheck **Show Percentage** to display just the icon. Check **Show Only in Fullscreen** to hide the indicator whenever the main REAPER window leaves fullscreen. To turn the setting off, enter fullscreen and uncheck it from the same menu. REAPER remembers both settings after a restart.
+Open **Extensions → ReaBattery** to change any setting, even while the indicator is hidden. The battery icon’s right-click menu offers the same settings. REAPER remembers your choices across restarts.
 
-**Show when plugged-in** is on by default. Uncheck it to show the indicator only when your Mac is running on battery. To turn it back on, disconnect external power and check it in the same menu. REAPER remembers this setting.
+- Uncheck **Show percentage** to display just the icon.
+- Check **Show only in Fullscreen** to hide the indicator whenever the main REAPER window leaves fullscreen.
+- Uncheck **Show when plugged-in** to display the indicator only on battery power. This setting is on by default.
 
-Use **Position** in the battery menu to choose **Right Corner** (the default), **Left Corner**, or **Center**. Center places the indicator next to the time display and falls back to the right corner when the display is hidden or too narrow. REAPER remembers your choice.
+Use **Position** to choose **Right Corner** (the default), **Left Corner**, or **Center**. Center places the indicator next to the time display and falls back to the right corner when the display is hidden or too narrow.
 
 ## Build and install
 

@@ -10,6 +10,8 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <limits>
+#include <string>
 
 namespace {
 
@@ -26,6 +28,25 @@ using Clock = std::chrono::steady_clock;
 
 enum class IndicatorPosition { Right, Left, Center };
 constexpr const char* positionValues[] = {"right", "left", "center"};
+
+enum Option { PercentageOption, FullscreenOption, PluggedInOption,
+              RightOption, LeftOption, CenterOption, OptionCount };
+
+struct OptionAction {
+    const char* identifier;
+    const char* title;
+    std::string description{};
+    gaccel_register_t registration{};
+};
+
+OptionAction optionActions[OptionCount] = {
+    {"ReaBatteryShowPercentage", "Show percentage"},
+    {"ReaBatteryFullscreenOnly", "Show only in Fullscreen"},
+    {"ReaBatteryShowWhenPluggedIn", "Show when plugged-in"},
+    {"ReaBatteryPositionRight", "Right Corner"},
+    {"ReaBatteryPositionLeft", "Left Corner"},
+    {"ReaBatteryPositionCenter", "Center"}
+};
 
 bool showPercentage = true;
 bool fullscreenOnly = false;
@@ -125,6 +146,10 @@ NSColor* batteryColor(Battery battery)
 } // namespace
 
 @interface ReaBatteryIndicator : NSView
+- (void)setIndicatorPosition:(IndicatorPosition)position;
+- (void)togglePercentage:(NSMenuItem*)sender;
+- (void)toggleFullscreenOnly:(NSMenuItem*)sender;
+- (void)toggleShowWhenPluggedIn:(NSMenuItem*)sender;
 - (void)showBattery:(Battery)battery;
 - (void)refreshBackgroundFromTransport:(NSView*)view leftEdge:(BOOL)leftEdge fallbackColor:(int)color;
 @end
@@ -152,31 +177,31 @@ NSColor* batteryColor(Battery battery)
 - (NSMenu*)menuForEvent:(NSEvent*)event
 {
     NSMenu* menu = [[NSMenu alloc] init];
-    NSMenuItem* item = [menu addItemWithTitle:@"Show Percentage"
+    NSMenuItem* item = [menu addItemWithTitle:@(optionActions[PercentageOption].title)
                                       action:@selector(togglePercentage:)
                                keyEquivalent:@""];
     item.target = self;
     item.state = showPercentage ? NSControlStateValueOn : NSControlStateValueOff;
-    NSMenuItem* fullscreenItem = [menu addItemWithTitle:@"Show Only in Fullscreen"
+    NSMenuItem* fullscreenItem = [menu addItemWithTitle:@(optionActions[FullscreenOption].title)
                                                 action:@selector(toggleFullscreenOnly:)
                                          keyEquivalent:@""];
     fullscreenItem.target = self;
     fullscreenItem.state = fullscreenOnly ? NSControlStateValueOn : NSControlStateValueOff;
-    NSMenuItem* pluggedInItem = [menu addItemWithTitle:@"Show when plugged-in"
+    NSMenuItem* pluggedInItem = [menu addItemWithTitle:@(optionActions[PluggedInOption].title)
                                               action:@selector(toggleShowWhenPluggedIn:)
                                        keyEquivalent:@""];
     pluggedInItem.target = self;
     pluggedInItem.state = showWhenPluggedIn ? NSControlStateValueOn : NSControlStateValueOff;
     NSMenuItem* positionItem = [menu addItemWithTitle:@"Position" action:nil keyEquivalent:@""];
     NSMenu* positions = [[NSMenu alloc] initWithTitle:@"Position"];
-    NSArray<NSString*>* names = @[@"Right Corner", @"Left Corner", @"Center"];
-    for (NSUInteger i = 0; i < names.count; ++i) {
-        NSMenuItem* choice = [positions addItemWithTitle:names[i]
+    for (int i = RightOption; i < OptionCount; ++i) {
+        const int position = i - RightOption;
+        NSMenuItem* choice = [positions addItemWithTitle:@(optionActions[i].title)
                                                  action:@selector(changeIndicatorPosition:)
                                           keyEquivalent:@""];
         choice.target = self;
-        choice.tag = i;
-        choice.state = i == static_cast<NSUInteger>(indicatorPosition)
+        choice.tag = position;
+        choice.state = position == static_cast<int>(indicatorPosition)
             ? NSControlStateValueOn : NSControlStateValueOff;
     }
     positionItem.submenu = positions;
@@ -188,11 +213,15 @@ NSColor* batteryColor(Battery battery)
     const NSInteger index = sender.tag;
     if (index < 0 || index > static_cast<NSInteger>(IndicatorPosition::Center))
         return;
-    const auto position = static_cast<IndicatorPosition>(index);
+    [self setIndicatorPosition:static_cast<IndicatorPosition>(index)];
+}
+
+- (void)setIndicatorPosition:(IndicatorPosition)position
+{
     if (position == indicatorPosition)
         return;
     indicatorPosition = position;
-    setExtState(settingsSection, positionKey, positionValues[index], true);
+    setExtState(settingsSection, positionKey, positionValues[static_cast<int>(position)], true);
     detachIndicator();
     updateTransport();
 }
@@ -363,6 +392,119 @@ Clock::time_point nextBatteryRead{};
 Clock::time_point nextBackgroundRead{};
 Battery battery;
 
+int optionIndexForCommand(int command)
+{
+    if (command > 0) {
+        for (int i = 0; i < OptionCount; ++i) {
+            if (optionActions[i].registration.accel.cmd == command)
+                return i;
+        }
+    }
+    return -1;
+}
+
+int optionToggleState(int command)
+{
+    switch (const int option = optionIndexForCommand(command)) {
+    case PercentageOption:
+        return showPercentage;
+    case FullscreenOption:
+        return fullscreenOnly;
+    case PluggedInOption:
+        return showWhenPluggedIn;
+    case RightOption:
+    case LeftOption:
+    case CenterOption:
+        return option - RightOption == static_cast<int>(indicatorPosition);
+    default:
+        return -1;
+    }
+}
+
+bool handleOptionCommand(int command, int)
+{
+    switch (const int option = optionIndexForCommand(command)) {
+    case PercentageOption:
+        [indicator togglePercentage:nil];
+        return true;
+    case FullscreenOption:
+        [indicator toggleFullscreenOnly:nil];
+        return true;
+    case PluggedInOption:
+        [indicator toggleShowWhenPluggedIn:nil];
+        return true;
+    case RightOption:
+    case LeftOption:
+    case CenterOption:
+        [indicator setIndicatorPosition:static_cast<IndicatorPosition>(option - RightOption)];
+        return true;
+    default:
+        return false;
+    }
+}
+
+void extensionsMenu(const char* name, void* handle, int flag)
+{
+    if (!handle)
+        return;
+    const auto menu = static_cast<HMENU>(handle);
+    if (flag == 0 && name && std::strcmp(name, "Main extensions") == 0) {
+        const HMENU options = CreatePopupMenu();
+        const HMENU positions = CreatePopupMenu();
+        if (!options || !positions) {
+            if (options)
+                DestroyMenu(options);
+            if (positions)
+                DestroyMenu(positions);
+            return;
+        }
+        for (int i = 0; i < OptionCount; ++i) {
+            const auto& action = optionActions[i];
+            InsertMenu(i < RightOption ? options : positions, -1, MF_BYPOSITION | MF_STRING,
+                       action.registration.accel.cmd, action.title);
+        }
+        InsertMenu(options, -1, MF_BYPOSITION | MF_POPUP, reinterpret_cast<UINT_PTR>(positions), "Position");
+        InsertMenu(menu, -1, MF_BYPOSITION | MF_POPUP, reinterpret_cast<UINT_PTR>(options), "ReaBattery");
+    } else if (flag == 1) {
+        // Submenus can be shown without the Main extensions menu ID.
+        for (const auto& action : optionActions) {
+            const int command = action.registration.accel.cmd;
+            const int state = optionToggleState(command);
+            if (state >= 0)
+                CheckMenuItem(menu, command, MF_BYCOMMAND | (state ? MF_CHECKED : MF_UNCHECKED));
+        }
+    }
+}
+
+void unregisterMenuActions()
+{
+    registerWithHost("-hookcustommenu", reinterpret_cast<void*>(extensionsMenu));
+    registerWithHost("-hookcommand", reinterpret_cast<void*>(handleOptionCommand));
+    registerWithHost("-toggleaction", reinterpret_cast<void*>(optionToggleState));
+    for (auto& action : optionActions) {
+        if (action.registration.accel.cmd)
+            registerWithHost("-gaccel", &action.registration);
+        action.registration = {};
+    }
+}
+
+bool registerMenuActions()
+{
+    for (auto& action : optionActions) {
+        const int command = registerWithHost("command_id", const_cast<char*>(action.identifier));
+        if (command <= 0 || command > std::numeric_limits<WORD>::max())
+            return false;
+        action.description = std::string("ReaBattery: ") + action.title;
+        action.registration.accel.cmd = static_cast<WORD>(command);
+        action.registration.desc = action.description.c_str();
+        if (!registerWithHost("gaccel", &action.registration))
+            return false;
+    }
+    return registerWithHost("hookcommand", reinterpret_cast<void*>(handleOptionCommand)) &&
+           registerWithHost("toggleaction", reinterpret_cast<void*>(optionToggleState)) &&
+           registerWithHost("hookcustommenu", reinterpret_cast<void*>(extensionsMenu));
+}
+
 NSView* findDockedTransport(NSView* mainView)
 {
     // The main-window Transport dialog has no title when docked at startup.
@@ -509,8 +651,10 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(
     REAPER_PLUGIN_HINSTANCE, reaper_plugin_info_t* host)
 {
     if (!host) {
-        if (registerWithHost)
+        if (registerWithHost) {
             registerWithHost("-timer", reinterpret_cast<void*>(tick));
+            unregisterMenuActions();
+        }
         detachIndicator();
         indicator = nil;
         registerWithHost = nullptr;
@@ -551,6 +695,16 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(
     nextLayout = {};
     nextBatteryRead = {};
     registerWithHost = host->Register;
+    if (!registerMenuActions()) {
+        unregisterMenuActions();
+        registerWithHost("-timer", reinterpret_cast<void*>(tick));
+        registerWithHost = nullptr;
+        indicator = nil;
+        return 0;
+    }
+    auto addExtensionsMainMenu = reinterpret_cast<bool (*)()>(host->GetFunc("AddExtensionsMainMenu"));
+    if (addExtensionsMainMenu)
+        addExtensionsMainMenu();
     host->Register("ext_name", const_cast<char*>("ReaBattery"));
     return 1;
 }
