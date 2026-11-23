@@ -18,9 +18,11 @@ constexpr CGFloat indicatorWidthWithoutPercentage = 34;
 constexpr CGFloat indicatorHeight = 20;
 constexpr char settingsSection[] = "ReaBattery";
 constexpr char showPercentageKey[] = "ShowPercentage";
+constexpr char fullscreenOnlyKey[] = "FullscreenOnly";
 using Clock = std::chrono::steady_clock;
 
 bool showPercentage = true;
+bool fullscreenOnly = false;
 void (*setExtState)(const char*, const char*, const char*, bool);
 void updateTransport();
 
@@ -146,6 +148,11 @@ NSColor* batteryColor(Battery battery)
                                keyEquivalent:@""];
     item.target = self;
     item.state = showPercentage ? NSControlStateValueOn : NSControlStateValueOff;
+    NSMenuItem* fullscreenItem = [menu addItemWithTitle:@"Show Only in Fullscreen"
+                                                action:@selector(toggleFullscreenOnly:)
+                                         keyEquivalent:@""];
+    fullscreenItem.target = self;
+    fullscreenItem.state = fullscreenOnly ? NSControlStateValueOn : NSControlStateValueOff;
     return menu;
 }
 
@@ -156,6 +163,14 @@ NSColor* batteryColor(Battery battery)
     setExtState(settingsSection, showPercentageKey, showPercentage ? "1" : "0", true);
     updateTransport();
     self.needsDisplay = YES;
+}
+
+- (void)toggleFullscreenOnly:(NSMenuItem*)sender
+{
+    fullscreenOnly = !fullscreenOnly;
+    sender.state = fullscreenOnly ? NSControlStateValueOn : NSControlStateValueOff;
+    setExtState(settingsSection, fullscreenOnlyKey, fullscreenOnly ? "1" : "0", true);
+    updateTransport();
 }
 
 - (void)showBattery:(Battery)battery
@@ -245,6 +260,7 @@ namespace {
 int (*registerWithHost)(const char*, void*);
 HWND (*getMainWindow)();
 int (*getThemeColor)(const char*, int);
+int (*getToggleCommandState)(int);
 
 ReaBatteryIndicator* indicator;
 __weak NSView* transport;
@@ -286,12 +302,20 @@ void detachIndicator()
     nextBackgroundRead = {};
 }
 
+bool isFullscreen(NSWindow* window)
+{
+    constexpr int toggleReaperFullscreenAction = 40346;
+    return (window.styleMask & NSWindowStyleMaskFullScreen) != 0 ||
+           (getToggleCommandState && getToggleCommandState(toggleReaperFullscreenAction) == 1);
+}
+
 void updateTransport()
 {
     id mainWindow = (__bridge id)getMainWindow();
     NSView* mainView = [mainWindow isKindOfClass:[NSWindow class]]
         ? ((NSWindow*)mainWindow).contentView : mainWindow;
-    NSView* current = battery.percent >= 0 && [mainView isKindOfClass:[NSView class]]
+    NSView* current = battery.percent >= 0 && [mainView isKindOfClass:[NSView class]] &&
+        (!fullscreenOnly || isFullscreen(mainView.window))
         ? findDockedTransport(mainView) : nil;
     if (!current) {
         detachIndicator();
@@ -369,6 +393,8 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(
         return 0;
     getMainWindow = reinterpret_cast<decltype(getMainWindow)>(host->GetFunc("GetMainHwnd"));
     getThemeColor = reinterpret_cast<decltype(getThemeColor)>(host->GetFunc("GetThemeColor"));
+    getToggleCommandState =
+        reinterpret_cast<decltype(getToggleCommandState)>(host->GetFunc("GetToggleCommandState"));
     auto getExtState = reinterpret_cast<const char* (*)(const char*, const char*)>(host->GetFunc("GetExtState"));
     setExtState = reinterpret_cast<decltype(setExtState)>(host->GetFunc("SetExtState"));
     if (!getMainWindow || !getThemeColor || !getExtState || !setExtState)
@@ -376,6 +402,8 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(
 
     const char* savedPercentage = getExtState(settingsSection, showPercentageKey);
     showPercentage = !savedPercentage || std::strcmp(savedPercentage, "0") != 0;
+    const char* savedFullscreenOnly = getExtState(settingsSection, fullscreenOnlyKey);
+    fullscreenOnly = savedFullscreenOnly && std::strcmp(savedFullscreenOnly, "1") == 0;
     indicator = [[ReaBatteryIndicator alloc] initWithFrame:NSZeroRect];
     if (!host->Register("timer", reinterpret_cast<void*>(tick))) {
         indicator = nil;
