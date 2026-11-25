@@ -7,9 +7,11 @@ if [ "$#" -gt 1 ]; then
 fi
 
 project_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
-resource_path=${1:-"$HOME/Library/Application Support/REAPER"}
-plugin_name=reaper_reabattery.dylib
-source="$project_dir/build/$plugin_name"
+. "$project_dir/scripts/platform.sh"
+
+resource_path=$(reaper_resource_path "${1:-}")
+plugin_name=${plugin_path##*/}
+source="$project_dir/$build_dir/$plugin_path"
 if [ ! -f "$source" ]; then
     source="$project_dir/UserPlugins/$plugin_name"
 fi
