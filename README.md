@@ -38,8 +38,11 @@ git clone https://github.com/justinfrankel/reaper-sdk.git third_party/reaper-sdk
 ./scripts/install.sh
 ```
 
-The build writes `build-win-x64/Release/reaper_reabattery.dll`. The installer copies it to `%APPDATA%\REAPER\UserPlugins` by default. Start REAPER to load the plugin.
+#### Linux
 
-### Uninstall a manual installation
-
-Run `./scripts/uninstall.sh` on macOS or in Git Bash on Windows. For portable REAPER, pass its resource path as the first argument to `install.sh` or `uninstall.sh`. Quote the path if it contains spaces.
+```sh
+git clone https://github.com/justinfrankel/reaper-sdk.git third_party/reaper-sdk
+git clone https://github.com/justinfrankel/WDL.git third_party/WDL
+./scripts/build.sh
+./scripts/install.sh
+```
