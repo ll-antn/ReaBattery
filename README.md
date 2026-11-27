@@ -20,7 +20,7 @@ Use [ReaPack](https://reapack.com/) 1.2.3.1 or later with REAPER >= 7.51
 1. In REAPER, open **Extensions → ReaPack → Import repositories…** and paste the repository URL.
 
    ```text
-   https://raw.githubusercontent.com/ll-antn/ReaBatteryReapack/main/index.xml
+   https://raw.githubusercontent.com/ll-antn/ReaBattery/main/index.xml
    ```
 
 2. Open **Extensions → ReaPack → Browse packages…**, search for **ReaBattery**, choose **Install**, and click **Apply**.
