@@ -3,22 +3,24 @@
   <metadata>
     <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0\fswiss Helvetica;}}
 \f0\fs28\b ReaBattery\b0\fs22\par
-Battery indicator for the REAPER Transport Bar. Currently only for Apple Silicon macOS.\par
+Shows battery indicator in the REAPER Transport Bar.\par
 }]]></description>
-    <link rel="website" href="https://github.com/ll-antn/ReaBatteryReapack">Repository and installation instructions</link>
+    <link rel="website" href="https://github.com/ll-antn/ReaBattery">Repository and installation instructions</link>
   </metadata>
   <category name="Extensions">
     <reapack name="ReaBattery" type="extension" desc="ReaBattery">
       <metadata>
         <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0\fswiss Helvetica;}}
 \f0\fs28\b ReaBattery\b0\fs22\par
-Shows battery level in the docked Transport Bar. Configure percentage, position, fullscreen visibility and visibility on external power from Extensions > ReaBattery.\par
+Shows battery level in the docked Transport Bar. To configure click right button on battery icon or go to Extensions -> ReaBattery.\par
 }]]></description>
-        <link rel="website" href="https://github.com/ll-antn/ReaBatteryReapack">Documentation</link>
+        <link rel="website" href="https://github.com/ll-antn/ReaBattery">Documentation</link>
       </metadata>
       <version name="0.1" author="ll-antn">
-        <changelog><![CDATA[Initial ReaPack distribution for Apple Silicon macOS and Windows x64.]]></changelog>
+        <changelog><![CDATA[Initial release. Supports Apple Silicon macOS, Windows x64, and Linux x86-64.]]></changelog>
         <source platform="darwin-arm64" file="reaper_reabattery.dylib">https://github.com/ll-antn/ReaBattery/releases/download/v0.1/reaper_reabattery.dylib</source>
+        <source platform="win64" file="reaper_reabattery.dll">https://github.com/ll-antn/ReaBattery/releases/download/v0.1/reaper_reabattery.dll</source>
+        <source platform="linux64" file="reaper_reabattery.so">https://github.com/ll-antn/ReaBattery/releases/download/v0.1/reaper_reabattery.so</source>
       </version>
     </reapack>
   </category>
