@@ -27,14 +27,16 @@ Use [ReaPack](https://reapack.com/) 1.2.3.1 or later with REAPER >= 7.51
 3. Restart REAPER. Open **Extensions → ReaBattery** to adjust the indicator, or right-click it in the docked Transport Bar.
 
 ## Build from source
+To get install path open REAPER and click **Options → Show REAPER resource path**
 
 #### macOS && Linux
 
 ```sh
 git clone https://github.com/justinfrankel/reaper-sdk.git third_party/reaper-sdk
 git clone https://github.com/justinfrankel/WDL.git third_party/WDL
-./scripts/build.sh
-./scripts/install.sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
+cmake --install build --prefix "/path/to/REAPER/resource-folder"
 ```
 
 #### Windows x64
@@ -45,4 +47,5 @@ Requires Visual Studio with the **Desktop development with C++** workload and a 
 git clone https://github.com/justinfrankel/reaper-sdk.git third_party/reaper-sdk
 cmake -S . -B ./build -G "Visual Studio 18 2026" -A x64
 cmake --build build --config Release --parallel
+cmake --install build --prefix "/path/to/REAPER/resource-folder"
 ```
